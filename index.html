@@ -1,87 +1,340 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CPU Scheduler Simulator</title>
-  <link rel="stylesheet" href="styles.css">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="styles.css" />
 </head>
-
 <body>
 
-<div class="container">
-  <h1>🧠 CPU Scheduler Simulator</h1>
-
-  <!-- INPUT -->
-  <div class="card">
-    <h3>Add Process</h3>
-    <input id="pid" placeholder="PID">
-    <input id="arrival" type="number" placeholder="Arrival Time">
-    <input id="burst" type="number" placeholder="Burst Time">
-    <input id="priority" type="number" placeholder="Priority">
-    <button onclick="addProcess()">➕ Add</button>
+  <!-- Background grid -->
+  <div class="bg-grid"></div>
+  <div class="bg-orbs">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+    <div class="orb orb-4"></div>
   </div>
 
-  <!-- TABLE -->
-  <div class="card">
-    <h3>Process Table</h3>
-    <table id="processTable">
-      <thead>
-        <tr>
-          <th>PID</th>
-          <th>AT</th>
-          <th>BT</th>
-          <th>Priority</th>
-          <th>❌</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </div>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo">
+        <span class="logo-icon">⬡</span>
+        <span class="logo-text">SCHED<span class="logo-accent">OS</span></span>
+      </div>
+      <div class="header-divider"></div>
+      <span class="header-subtitle">CPU Scheduling Simulator</span>
+    </div>
+    <div class="header-right">
+      <div class="status-pill" id="statusPill">
+        <span class="status-dot"></span>
+        <span id="statusText">Idle</span>
+      </div>
+      <div class="clock" id="clockDisplay">T = 0</div>
+    </div>
+  </header>
 
-  <!-- CONTROLS -->
-  <div class="card">
-    <h3>Controls</h3>
-    <select id="algorithm">
-      <option value="fcfs">FCFS</option>
-      <option value="sjf">SJF</option>
-      <option value="srtf">SRTF</option>
-      <option value="priority">Priority</option>
-      <option value="rr">Round Robin</option>
-    </select>
+  <!-- Main Layout -->
+  <main class="main-layout">
 
-    <input id="quantum" type="number" placeholder="Time Quantum">
-    <button onclick="runSimulation()">🚀 Run</button>
-    <button onclick="compareAll()">📊 Compare</button>
-    <button onclick="resetAll()">♻ Reset</button>
-  </div>
+    <!-- ═══════════════ LEFT PANEL ═══════════════ -->
+    <aside class="left-panel">
 
-  <!-- GANTT -->
-  <div class="card">
-    <h3>Gantt Chart (Live)</h3>
-    <div id="gantt"></div>
-  </div>
+      <!-- Algorithm Selector -->
+      <section class="panel-card algo-card">
+        <div class="card-header">
+          <span class="card-icon">⚙</span>
+          <h3>Algorithm</h3>
+        </div>
+        <div class="algo-grid">
+          <button class="algo-btn active" data-algo="FCFS">FCFS</button>
+          <button class="algo-btn" data-algo="SJF">SJF</button>
+          <button class="algo-btn" data-algo="SRTF">SRTF</button>
+          <button class="algo-btn" data-algo="PRIORITY">Priority</button>
+          <button class="algo-btn" data-algo="RR">Round Robin</button>
+        </div>
+        <!-- Quantum input -->
+        <div class="extra-field" id="quantumField" style="display:none;">
+          <label>Time Quantum</label>
+          <div class="input-row">
+            <input type="number" id="quantum" value="2" min="1" max="10" />
+            <span class="unit-label">units</span>
+          </div>
+        </div>
+      </section>
 
-  <!-- RESULTS -->
-  <div class="card">
-    <h3>Results</h3>
-    <div id="results"></div>
-  </div>
+      <!-- Process Input -->
+      <section class="panel-card input-card">
+        <div class="card-header">
+          <span class="card-icon">＋</span>
+          <h3>Add Process</h3>
+          <div class="header-actions">
+            <button class="icon-btn" id="addRandomBtn" title="Add Random">⚄</button>
+            <button class="icon-btn danger" id="clearAllBtn" title="Clear All">✕</button>
+          </div>
+        </div>
+        <div class="process-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Arrival</label>
+              <input type="number" id="arrivalInput" placeholder="0" min="0" value="0" />
+            </div>
+            <div class="form-group">
+              <label>Burst</label>
+              <input type="number" id="burstInput" placeholder="5" min="1" value="5" />
+            </div>
+            <div class="form-group priority-group" id="priorityGroup" style="display:none;">
+              <label>Priority</label>
+              <input type="number" id="priorityInput" placeholder="1" min="1" value="1" />
+            </div>
+          </div>
+          <button class="add-btn" id="addProcessBtn">+ Add Process</button>
+        </div>
+      </section>
 
-  <!-- CPU GRAPH -->
-  <div class="card">
-    <h3>📊 CPU Utilization (Live)</h3>
-    <canvas id="cpuChart"></canvas>
-  </div>
+      <!-- Process List -->
+      <section class="panel-card process-list-card">
+        <div class="card-header">
+          <span class="card-icon">☰</span>
+          <h3>Process Queue</h3>
+          <span class="badge" id="processCount">0</span>
+        </div>
+        <div class="process-table-wrap">
+          <table class="process-table">
+            <thead>
+              <tr>
+                <th>PID</th>
+                <th>AT</th>
+                <th>BT</th>
+                <th id="thPriority" style="display:none;">PR</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="processTableBody">
+              <tr class="empty-row">
+                <td colspan="5">No processes added</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-  <!-- COMPARISON -->
-  <div class="card">
-    <h3>📊 Algorithm Comparison</h3>
-    <canvas id="chart"></canvas>
-  </div>
+      <!-- Controls -->
+      <section class="panel-card controls-card">
+        <div class="card-header">
+          <span class="card-icon">▶</span>
+          <h3>Simulation Controls</h3>
+        </div>
+        <div class="btn-group-main">
+          <button class="ctrl-btn primary" id="runBtn">
+            <span class="btn-icon">▶</span> Run
+          </button>
+          <button class="ctrl-btn warn" id="pauseBtn" disabled>
+            <span class="btn-icon">⏸</span> Pause
+          </button>
+          <button class="ctrl-btn accent" id="stepBtn">
+            <span class="btn-icon">⏭</span> Step
+          </button>
+          <button class="ctrl-btn danger" id="resetBtn">
+            <span class="btn-icon">↺</span> Reset
+          </button>
+        </div>
+        <div class="speed-row">
+          <span class="speed-label">Speed</span>
+          <input type="range" id="speedSlider" min="1" max="10" value="5" class="speed-slider" />
+          <span class="speed-val" id="speedVal">5x</span>
+        </div>
+      </section>
 
-</div>
+    </aside>
 
-<script src="script.js"></script>
+    <!-- ═══════════════ RIGHT PANEL ═══════════════ -->
+    <div class="right-panel">
+
+      <!-- KPI Cards Row -->
+      <div class="kpi-row">
+        <div class="kpi-card" id="kpiWT">
+          <div class="kpi-icon">⏱</div>
+          <div class="kpi-body">
+            <div class="kpi-label">Avg Waiting Time</div>
+            <div class="kpi-value" id="kpiWTVal">—</div>
+          </div>
+          <div class="kpi-bar" style="--c:#f97316"></div>
+        </div>
+        <div class="kpi-card" id="kpiTAT">
+          <div class="kpi-icon">🔄</div>
+          <div class="kpi-body">
+            <div class="kpi-label">Avg Turnaround Time</div>
+            <div class="kpi-value" id="kpiTATVal">—</div>
+          </div>
+          <div class="kpi-bar" style="--c:#22d3ee"></div>
+        </div>
+        <div class="kpi-card" id="kpiUtil">
+          <div class="kpi-icon">⚡</div>
+          <div class="kpi-body">
+            <div class="kpi-label">CPU Utilization</div>
+            <div class="kpi-value" id="kpiUtilVal">—</div>
+          </div>
+          <div class="kpi-bar" style="--c:#a78bfa"></div>
+        </div>
+        <div class="kpi-card" id="kpiThru">
+          <div class="kpi-icon">📊</div>
+          <div class="kpi-body">
+            <div class="kpi-label">Throughput</div>
+            <div class="kpi-value" id="kpiThruVal">—</div>
+          </div>
+          <div class="kpi-bar" style="--c:#4ade80"></div>
+        </div>
+      </div>
+
+      <!-- Live Simulation Area -->
+      <div class="sim-section">
+
+        <!-- Gantt + State flow -->
+        <div class="sim-top-row">
+
+          <!-- CPU State Flow -->
+          <div class="panel-card flow-card">
+            <div class="card-header">
+              <span class="card-icon">⟳</span>
+              <h3>Live State Flow</h3>
+              <span class="live-badge">LIVE</span>
+            </div>
+            <div class="flow-visual">
+              <!-- Ready Queue -->
+              <div class="flow-section">
+                <div class="flow-label">Ready Queue</div>
+                <div class="flow-queue" id="readyQueue">
+                  <span class="flow-empty">Empty</span>
+                </div>
+              </div>
+              <!-- Arrow -->
+              <div class="flow-arrow">→</div>
+              <!-- CPU -->
+              <div class="flow-section">
+                <div class="flow-label">CPU</div>
+                <div class="cpu-core" id="cpuCore">
+                  <div class="cpu-ring"></div>
+                  <div class="cpu-inner" id="cpuInner">
+                    <span class="cpu-idle-text">IDLE</span>
+                  </div>
+                </div>
+              </div>
+              <!-- Arrow -->
+              <div class="flow-arrow">→</div>
+              <!-- Completed -->
+              <div class="flow-section">
+                <div class="flow-label">Completed</div>
+                <div class="flow-done" id="doneQueue">
+                  <span class="flow-empty">None</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Time Info -->
+          <div class="panel-card time-card">
+            <div class="card-header">
+              <span class="card-icon">⏲</span>
+              <h3>Execution Info</h3>
+            </div>
+            <div class="exec-info-grid">
+              <div class="exec-info-item">
+                <div class="exec-info-label">Current Time</div>
+                <div class="exec-info-val" id="execTime">0</div>
+              </div>
+              <div class="exec-info-item">
+                <div class="exec-info-label">Algorithm</div>
+                <div class="exec-info-val" id="execAlgo">FCFS</div>
+              </div>
+              <div class="exec-info-item">
+                <div class="exec-info-label">Running</div>
+                <div class="exec-info-val" id="execRunning">—</div>
+              </div>
+              <div class="exec-info-item">
+                <div class="exec-info-label">In Queue</div>
+                <div class="exec-info-val" id="execQueue">0</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Gantt Chart -->
+        <div class="panel-card gantt-card">
+          <div class="card-header">
+            <span class="card-icon">▬</span>
+            <h3>Gantt Chart</h3>
+          </div>
+          <div class="gantt-wrap" id="ganttWrap">
+            <div class="gantt-empty">Run simulation to see Gantt chart</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Results Table -->
+      <div class="panel-card results-card" id="resultsCard">
+        <div class="card-header">
+          <span class="card-icon">📋</span>
+          <h3>Scheduling Results</h3>
+          <span class="badge" id="resultCount"></span>
+        </div>
+        <div class="results-table-wrap">
+          <table class="results-table" id="resultsTable">
+            <thead>
+              <tr>
+                <th>Process</th>
+                <th>Arrival</th>
+                <th>Burst</th>
+                <th>Completion</th>
+                <th>Turnaround</th>
+                <th>Waiting</th>
+              </tr>
+            </thead>
+            <tbody id="resultsTableBody">
+              <tr class="empty-row">
+                <td colspan="6">Results will appear after simulation completes</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Charts Row -->
+      <div class="charts-row">
+        <div class="panel-card chart-card">
+          <div class="card-header">
+            <span class="card-icon">📈</span>
+            <h3>Performance Overview</h3>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="perfChart"></canvas>
+          </div>
+        </div>
+        <div class="panel-card chart-card">
+          <div class="card-header">
+            <span class="card-icon">📊</span>
+            <h3>Per-Process Times</h3>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="processChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="script.js"></script>
 </body>
 </html>
