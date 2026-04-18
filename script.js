@@ -1,265 +1,811 @@
-let processes = [];
-let timeline = [];
-let currentTime = 0;
-let interval = null;
 
-let cpuChart = null;
-let compareChart = null;
+"use strict";
 
-let cpuData = [];
-let busyTime = 0;
-let idleTime = 0;
+const COLORS = [
+  { hex: '#38bdf8', bg: 'rgba(56,189,248,0.15)', border: 'rgba(56,189,248,0.4)' },
+  { hex: '#818cf8', bg: 'rgba(129,140,248,0.15)', border: 'rgba(129,140,248,0.4)' },
+  { hex: '#f472b6', bg: 'rgba(244,114,182,0.15)', border: 'rgba(244,114,182,0.4)' },
+  { hex: '#4ade80', bg: 'rgba(74,222,128,0.15)', border: 'rgba(74,222,128,0.4)' },
+  { hex: '#fb923c', bg: 'rgba(251,146,60,0.15)', border: 'rgba(251,146,60,0.4)' },
+  { hex: '#fbbf24', bg: 'rgba(251,191,36,0.15)', border: 'rgba(251,191,36,0.4)' },
+  { hex: '#a78bfa', bg: 'rgba(167,139,250,0.15)', border: 'rgba(167,139,250,0.4)' },
+  { hex: '#34d399', bg: 'rgba(52,211,153,0.15)', border: 'rgba(52,211,153,0.4)' },
+  { hex: '#f97316', bg: 'rgba(249,115,22,0.15)', border: 'rgba(249,115,22,0.4)' },
+  { hex: '#ec4899', bg: 'rgba(236,72,153,0.15)', border: 'rgba(236,72,153,0.4)' },
+];
 
-// ADD PROCESS
+
+let processes      = [];     
+let nextPid        = 1;      
+let currentAlgo    = 'FCFS';
+
+
+let simTimeline    = [];     
+let simResults     = [];     
+let simSteps       = [];     
+let stepIndex      = 0;      
+let simRunning     = false;
+let simPaused      = false;
+let simTimer       = null;
+let simSpeed       = 5;      
+
+
+let perfChart      = null;
+let processChart   = null;
+
+
+const $ = id => document.getElementById(id);
+
+const DOM = {
+  algoBtns:         document.querySelectorAll('.algo-btn'),
+  quantumField:     $('quantumField'),
+  quantum:          $('quantum'),
+  priorityGroup:    $('priorityGroup'),
+  thPriority:       $('thPriority'),
+  arrivalInput:     $('arrivalInput'),
+  burstInput:       $('burstInput'),
+  priorityInput:    $('priorityInput'),
+  addProcessBtn:    $('addProcessBtn'),
+  addRandomBtn:     $('addRandomBtn'),
+  clearAllBtn:      $('clearAllBtn'),
+  processTableBody: $('processTableBody'),
+  processCount:     $('processCount'),
+  runBtn:           $('runBtn'),
+  pauseBtn:         $('pauseBtn'),
+  stepBtn:          $('stepBtn'),
+  resetBtn:         $('resetBtn'),
+  speedSlider:      $('speedSlider'),
+  speedVal:         $('speedVal'),
+  statusPill:       $('statusPill'),
+  statusText:       $('statusText'),
+  clockDisplay:     $('clockDisplay'),
+  readyQueue:       $('readyQueue'),
+  cpuCore:          $('cpuCore'),
+  cpuInner:         $('cpuInner'),
+  doneQueue:        $('doneQueue'),
+  ganttWrap:        $('ganttWrap'),
+  execTime:         $('execTime'),
+  execAlgo:         $('execAlgo'),
+  execRunning:      $('execRunning'),
+  execQueue:        $('execQueue'),
+  resultsTableBody: $('resultsTableBody'),
+  resultCount:      $('resultCount'),
+  kpiWTVal:         $('kpiWTVal'),
+  kpiTATVal:        $('kpiTATVal'),
+  kpiUtilVal:       $('kpiUtilVal'),
+  kpiThruVal:       $('kpiThruVal'),
+  toastContainer:   $('toastContainer'),
+};
+
+
+DOM.algoBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    DOM.algoBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentAlgo = btn.dataset.algo;
+    DOM.quantumField.style.display  = (currentAlgo === 'RR')       ? 'block' : 'none';
+    DOM.priorityGroup.style.display = (currentAlgo === 'PRIORITY') ? 'flex'  : 'none';
+    DOM.thPriority.style.display    = (currentAlgo === 'PRIORITY') ? ''      : 'none';
+    DOM.execAlgo.textContent = currentAlgo;
+    renderProcessTable();
+  });
+});
+
+DOM.speedSlider.addEventListener('input', () => {
+  simSpeed = +DOM.speedSlider.value;
+  DOM.speedVal.textContent = simSpeed + 'x';
+});
+
+
+DOM.addProcessBtn.addEventListener('click', addProcess);
+DOM.addRandomBtn.addEventListener('click', addRandomProcess);
+DOM.clearAllBtn.addEventListener('click', clearAll);
+
+
+[DOM.arrivalInput, DOM.burstInput, DOM.priorityInput].forEach(inp => {
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') addProcess(); });
+});
+
 function addProcess() {
-  const pid = document.getElementById("pid").value;
-  const arrival = +document.getElementById("arrival").value;
-  const burst = +document.getElementById("burst").value;
-  const priority = +document.getElementById("priority").value || 0;
+  const arrival  = parseInt(DOM.arrivalInput.value) || 0;
+  const burst    = parseInt(DOM.burstInput.value);
+  const priority = parseInt(DOM.priorityInput.value) || 1;
 
-  if (!pid || burst <= 0) return alert("Invalid input");
+  if (isNaN(burst) || burst < 1) { showToast('Burst time must be ≥ 1', 'error'); return; }
+  if (arrival < 0)               { showToast('Arrival time must be ≥ 0', 'error'); return; }
+  if (processes.length >= 10)    { showToast('Maximum 10 processes', 'warn'); return; }
 
-  processes.push({ pid, arrival, burst, priority });
-  renderTable();
+  const colorIdx = processes.length % COLORS.length;
+  processes.push({ id: nextPid++, arrival, burst, priority, colorIdx });
+  renderProcessTable();
+  DOM.burstInput.value = '';
+  DOM.arrivalInput.value = '';
+  DOM.burstInput.focus();
+  showToast(`P${processes[processes.length-1].id} added`, 'success');
 }
 
-// TABLE
-function renderTable() {
-  const tbody = document.querySelector("#processTable tbody");
-  tbody.innerHTML = "";
+function addRandomProcess() {
+  if (processes.length >= 10) { showToast('Maximum 10 processes', 'warn'); return; }
+  const colorIdx = processes.length % COLORS.length;
+  processes.push({
+    id:       nextPid++,
+    arrival:  Math.floor(Math.random() * 8),
+    burst:    Math.floor(Math.random() * 9) + 1,
+    priority: Math.floor(Math.random() * 5) + 1,
+    colorIdx,
+  });
+  renderProcessTable();
+  showToast(`P${processes[processes.length-1].id} added (random)`, 'info');
+}
 
-  processes.forEach((p, i) => {
-    tbody.innerHTML += `
+function removeProcess(id) {
+  processes = processes.filter(p => p.id !== id);
+  renderProcessTable();
+}
+
+function clearAll() {
+  processes = [];
+  renderProcessTable();
+  resetSimState();
+  showToast('All processes cleared', 'info');
+}
+
+function renderProcessTable() {
+  DOM.processCount.textContent = processes.length;
+  if (processes.length === 0) {
+    DOM.processTableBody.innerHTML = `<tr class="empty-row"><td colspan="5">No processes added</td></tr>`;
+    return;
+  }
+  const showPri = currentAlgo === 'PRIORITY';
+  DOM.processTableBody.innerHTML = processes.map((p, i) => {
+    const c = COLORS[p.colorIdx];
+    return `
       <tr>
-        <td>${p.pid}</td>
+        <td>
+          <span class="pid-chip proc-color-${p.colorIdx}">P${p.id}</span>
+        </td>
         <td>${p.arrival}</td>
         <td>${p.burst}</td>
-        <td>${p.priority}</td>
-        <td><button onclick="deleteProcess(${i})">❌</button></td>
-      </tr>
-    `;
-  });
+        ${showPri ? `<td>${p.priority}</td>` : `<td style="display:none"></td>`}
+        <td>
+          <button class="del-btn" onclick="removeProcess(${p.id})">✕</button>
+        </td>
+      </tr>`;
+  }).join('');
 }
 
-function deleteProcess(i) {
-  processes.splice(i, 1);
-  renderTable();
+
+function runAlgorithm(procs, algo, quantum) {
+
+  const P = procs.map(p => ({ ...p, remaining: p.burst }));
+
+  switch (algo) {
+    case 'FCFS':     return fcfs(P);
+    case 'SJF':      return sjf(P);
+    case 'SRTF':     return srtf(P);
+    case 'PRIORITY': return prioritySched(P);
+    case 'RR':       return roundRobin(P, quantum);
+    default:         return fcfs(P);
+  }
 }
 
-function resetAll() {
-  processes = [];
-  renderTable();
-  document.getElementById("gantt").innerHTML = "";
-  document.getElementById("results").innerHTML = "";
-}
 
-// ================= BUILD TIMELINE =================
-function buildTimeline(algo) {
+function fcfs(P) {
+  const sorted = [...P].sort((a, b) => a.arrival - b.arrival || a.id - b.id);
   let time = 0;
-  let copy = processes.map(p => ({ ...p, remaining: p.burst }));
-  let queue = [];
+  const timeline = [];
+  sorted.forEach(p => {
+    if (time < p.arrival) time = p.arrival; 
+    timeline.push({ pid: p.id, start: time, end: time + p.burst });
+    time += p.burst;
+  });
+  return { timeline, results: calcResults(P, timeline) };
+}
 
-  timeline = [];
 
-  while (copy.some(p => p.remaining > 0)) {
+function sjf(P) {
+  const remaining = [...P];
+  let time = 0;
+  const timeline = [];
+  const done = new Set();
 
-    copy.forEach(p => {
-      if (p.arrival === time) queue.push(p);
-    });
-
-    let available = queue.filter(p => p.remaining > 0);
-    let current = null;
-
-    if (algo === "fcfs") current = available[0];
-    if (algo === "sjf") current = [...available].sort((a,b)=>a.burst-b.burst)[0];
-    if (algo === "srtf") current = [...available].sort((a,b)=>a.remaining-b.remaining)[0];
-    if (algo === "priority") current = [...available].sort((a,b)=>a.priority-b.priority)[0];
-
-    // ROUND ROBIN FIX
-    if (algo === "rr") {
-      let q = +document.getElementById("quantum").value || 2;
-
-      if (queue.length) {
-        current = queue.shift();
-
-        for (let i = 0; i < q && current.remaining > 0; i++) {
-          timeline.push(current.pid);
-          current.remaining--;
-          time++;
-        }
-
-        if (current.remaining > 0) queue.push(current);
-        continue;
-      }
-    }
-
-    if (!current) {
-      timeline.push("Idle");
+  while (done.size < P.length) {
+    const available = remaining.filter(p => p.arrival <= time && !done.has(p.id));
+    if (available.length === 0) {
       time++;
       continue;
     }
 
-    current.remaining--;
-    timeline.push(current.pid);
-    time++;
+    available.sort((a, b) => a.burst - b.burst || a.arrival - b.arrival || a.id - b.id);
+    const p = available[0];
+    timeline.push({ pid: p.id, start: time, end: time + p.burst });
+    time += p.burst;
+    done.add(p.id);
   }
+  return { timeline, results: calcResults(P, timeline) };
 }
 
 
-function runSimulation() {
-  const algo = document.getElementById("algorithm").value;
+function srtf(P) {
+  const procs = P.map(p => ({ ...p, remaining: p.burst }));
+  const totalTime = P.reduce((s, p) => Math.max(s, p.arrival) + p.burst, 0) + 10;
+  let time = 0;
+  const timeline = [];
+  const done = new Set();
+  let current = null;
+  let segStart = 0;
 
-  if (!processes.length) return alert("Add processes");
-
-  buildTimeline(algo);
-
-  const gantt = document.getElementById("gantt");
-  gantt.innerHTML = "";
-
-  currentTime = 0;
-
-  // RESET CPU GRAPH DATA
-  cpuData = [];
-  busyTime = 0;
-  idleTime = 0;
-
-  if (cpuChart) {
-    cpuChart.destroy();
-    cpuChart = null;
-  }
-
-  if (interval) clearInterval(interval);
-
-  interval = setInterval(() => {
-    if (currentTime >= timeline.length) {
-      clearInterval(interval);
-      calculateFinal();
-      return;
-    }
-
-    const pid = timeline[currentTime];
-
-    // CPU UTILIZATION CALC
-    if (pid === "Idle") idleTime++;
-    else busyTime++;
-
-    let total = busyTime + idleTime;
-    let utilization = (busyTime / total) * 100;
-
-    cpuData.push(utilization);
-
-    updateCPUChart();
-
-    // GANTT BLOCK
-    const block = document.createElement("div");
-    block.className = "block";
-    block.innerHTML = `${pid}<br>${currentTime}`;
-
-    if (pid === "Idle") block.style.background = "#ef4444";
-
-    gantt.appendChild(block);
-    gantt.scrollLeft = gantt.scrollWidth;
-
-    currentTime++;
-  }, 400);
-}
-
-
-function calculateFinal() {
-  let completion = {};
-
-  for (let i = 0; i < timeline.length; i++) {
-    let pid = timeline[i];
-    if (pid !== "Idle") completion[pid] = i + 1;
-  }
-
-  let res = processes.map(p => {
-    let ct = completion[p.pid] || 0;
-    let tat = ct - p.arrival;
-    let wt = tat - p.burst;
-
-    return { ...p, completion: ct, turnaround: tat, waiting: wt };
-  });
-
-  let avgWT = res.reduce((a,b)=>a+b.waiting,0)/res.length;
-  let avgTAT = res.reduce((a,b)=>a+b.turnaround,0)/res.length;
-
-  document.getElementById("results").innerHTML = `
-    Avg Waiting Time: ${avgWT.toFixed(2)} <br>
-    Avg Turnaround Time: ${avgTAT.toFixed(2)}
-  `;
-}
-
-
-function updateCPUChart() {
-  const ctx = document.getElementById("cpuChart");
-
-  if (!cpuChart) {
-    cpuChart = new Chart(ctx, {
-      type: "line",
-      data: {
-        labels: [],
-        datasets: [{
-          label: "CPU Utilization %",
-          data: [],
-          borderWidth: 2,
-          tension: 0.3
-        }]
-      },
-      options: {
-        animation: false,
-        responsive: true,
-        scales: {
-          y: {
-            min: 0,
-            max: 100
-          }
-        }
+  while (done.size < P.length) {
+    const available = procs.filter(p => p.arrival <= time && !done.has(p.id));
+    if (available.length === 0) {
+      if (current !== null) {
+        timeline.push({ pid: current.id, start: segStart, end: time });
+        current = null;
       }
+      time++;
+      continue;
+    }
+
+    available.sort((a, b) => a.remaining - b.remaining || a.arrival - b.arrival || a.id - b.id);
+    const best = available[0];
+
+    if (!current || best.id !== current.id) {
+      if (current !== null) {
+        timeline.push({ pid: current.id, start: segStart, end: time });
+      }
+      current = best;
+      segStart = time;
+    }
+
+    current.remaining--;
+    time++;
+
+    if (current.remaining === 0) {
+      timeline.push({ pid: current.id, start: segStart, end: time });
+      done.add(current.id);
+      current = null;
+      segStart = time;
+    }
+
+    if (time > 1000) break; 
+  }
+
+  
+  const merged = [];
+  timeline.forEach(seg => {
+    const last = merged[merged.length - 1];
+    if (last && last.pid === seg.pid && last.end === seg.start) {
+      last.end = seg.end;
+    } else {
+      merged.push({ ...seg });
+    }
+  });
+
+  return { timeline: merged, results: calcResults(P, merged) };
+}
+
+
+function prioritySched(P) {
+  const remaining = [...P];
+  let time = 0;
+  const timeline = [];
+  const done = new Set();
+
+  while (done.size < P.length) {
+    const available = remaining.filter(p => p.arrival <= time && !done.has(p.id));
+    if (available.length === 0) { time++; continue; }
+    available.sort((a, b) => a.priority - b.priority || a.arrival - b.arrival || a.id - b.id);
+    const p = available[0];
+    timeline.push({ pid: p.id, start: time, end: time + p.burst });
+    time += p.burst;
+    done.add(p.id);
+  }
+  return { timeline, results: calcResults(P, timeline) };
+}
+
+
+function roundRobin(P, quantum) {
+  const procs = P.map(p => ({ ...p, remaining: p.burst }));
+  const queue = [];
+  let time = 0;
+  const timeline = [];
+  const arrived = new Set();
+  const done = new Set();
+
+
+  procs.filter(p => p.arrival === 0).sort((a,b)=>a.id-b.id).forEach(p => { queue.push(p); arrived.add(p.id); });
+
+  while (done.size < P.length) {
+    if (queue.length === 0) {
+     
+      const notArrived = procs.filter(p => !arrived.has(p.id) && !done.has(p.id));
+      if (notArrived.length === 0) break;
+      notArrived.sort((a,b) => a.arrival - b.arrival);
+      time = notArrived[0].arrival;
+      notArrived.filter(p => p.arrival === time).sort((a,b)=>a.id-b.id).forEach(p => { queue.push(p); arrived.add(p.id); });
+      continue;
+    }
+
+    const p = queue.shift();
+    const execTime = Math.min(quantum, p.remaining);
+    const start = time;
+    time += execTime;
+    p.remaining -= execTime;
+
+ 
+    procs
+      .filter(p2 => p2.arrival > start && p2.arrival <= time && !arrived.has(p2.id))
+      .sort((a,b) => a.arrival - b.arrival || a.id - b.id)
+      .forEach(p2 => { queue.push(p2); arrived.add(p2.id); });
+
+    if (p.remaining === 0) {
+      done.add(p.id);
+    } else {
+      queue.push(p);
+    }
+
+    timeline.push({ pid: p.id, start, end: time });
+  }
+
+  return { timeline, results: calcResults(P, timeline) };
+}
+
+
+function calcResults(origProcs, timeline) {
+  return origProcs.map(p => {
+
+    const segs = timeline.filter(s => s.pid === p.id);
+    if (segs.length === 0) return { pid: p.id, arrival: p.arrival, burst: p.burst, completion: 0, tat: 0, wt: 0 };
+    const completion = Math.max(...segs.map(s => s.end));
+    const tat        = completion - p.arrival;
+    const wt         = tat - p.burst;
+    return { pid: p.id, arrival: p.arrival, burst: p.burst, completion, tat, wt: Math.max(0, wt) };
+  });
+}
+
+
+function buildSteps(timeline, results, allProcs) {
+  const totalTime = timeline.length > 0 ? Math.max(...timeline.map(s => s.end)) : 0;
+  const steps = [];
+  const completed = new Set();
+
+  for (let t = 0; t <= totalTime; t++) {
+
+    const seg = timeline.find(s => s.start <= t && t < s.end);
+    const runningPid = seg ? seg.pid : null;
+
+  
+    timeline.filter(s => s.end === t).forEach(s => {
+     
+      const allSegs = timeline.filter(x => x.pid === s.pid);
+      if (Math.max(...allSegs.map(x => x.end)) === t) completed.add(s.pid);
+    });
+
+  
+    const queuePids = allProcs
+      .filter(p => p.arrival <= t && !completed.has(p.id) && p.id !== runningPid)
+      .map(p => p.id);
+
+    
+    const ganttSoFar = timeline.filter(s => s.start < t);
+
+    steps.push({
+      time: t,
+      runningPid,
+      queuePids,
+      completedPids: [...completed],
+      ganttSoFar: JSON.parse(JSON.stringify(ganttSoFar)),
     });
   }
 
-  cpuChart.data.labels.push(currentTime);
-  cpuChart.data.datasets[0].data.push(cpuData[cpuData.length - 1]);
-  cpuChart.update();
+
+  steps.push({
+    time: totalTime,
+    runningPid: null,
+    queuePids: [],
+    completedPids: results.map(r => r.pid),
+    ganttSoFar: JSON.parse(JSON.stringify(timeline)),
+    isFinal: true,
+  });
+
+  return steps;
 }
 
 
-function compareAll() {
-  let algos = ["fcfs","sjf","srtf","priority","rr"];
-  let labels=[],wt=[],tat=[];
+DOM.runBtn.addEventListener('click', startSimulation);
+DOM.pauseBtn.addEventListener('click', togglePause);
+DOM.stepBtn.addEventListener('click', doStep);
+DOM.resetBtn.addEventListener('click', resetSim);
 
-  algos.forEach(a=>{
-    buildTimeline(a);
+function startSimulation() {
+  if (processes.length === 0) { showToast('Add at least one process first', 'warn'); return; }
 
-    let completion={};
+  const quantum = parseInt(DOM.quantum.value) || 2;
+  const { timeline, results } = runAlgorithm(processes, currentAlgo, quantum);
 
-    timeline.forEach((pid,i)=>{
-      if(pid!=="Idle") completion[pid]=i+1;
-    });
+  simTimeline = timeline;
+  simResults  = results;
+  simSteps    = buildSteps(timeline, results, processes);
+  stepIndex   = 0;
 
-    let res=processes.map(p=>{
-      let ct=completion[p.pid]||0;
-      let tat=ct-p.arrival;
-      let wt=tat-p.burst;
-      return {waiting:wt,turnaround:tat};
-    });
+  simRunning = true;
+  simPaused  = false;
 
-    labels.push(a.toUpperCase());
-    wt.push(res.reduce((a,b)=>a+b.waiting,0)/res.length);
-    tat.push(res.reduce((a,b)=>a+b.turnaround,0)/res.length);
-  });
+  DOM.runBtn.disabled   = true;
+  DOM.pauseBtn.disabled = false;
+  DOM.stepBtn.disabled  = false;
 
-  if(compareChart) compareChart.destroy();
+  setStatus('running', 'Running');
+  DOM.execAlgo.textContent = currentAlgo;
+  tickSimulation();
+}
 
-  compareChart=new Chart(document.getElementById("chart"),{
-    type:"bar",
-    data:{
-      labels,
-      datasets:[
-        {label:"Waiting Time",data:wt},
-        {label:"Turnaround Time",data:tat}
-      ]
+function togglePause() {
+  if (!simRunning) return;
+  simPaused = !simPaused;
+  if (simPaused) {
+    clearTimeout(simTimer);
+    DOM.pauseBtn.innerHTML = '<span class="btn-icon">▶</span> Resume';
+    setStatus('paused', 'Paused');
+  } else {
+    DOM.pauseBtn.innerHTML = '<span class="btn-icon">⏸</span> Pause';
+    setStatus('running', 'Running');
+    tickSimulation();
+  }
+}
+
+function doStep() {
+  if (processes.length === 0) { showToast('Add at least one process first', 'warn'); return; }
+
+
+  if (!simRunning || simSteps.length === 0) {
+    const quantum = parseInt(DOM.quantum.value) || 2;
+    const { timeline, results } = runAlgorithm(processes, currentAlgo, quantum);
+    simTimeline = timeline;
+    simResults  = results;
+    simSteps    = buildSteps(timeline, results, processes);
+    stepIndex   = 0;
+    simRunning  = true;
+    simPaused   = true;
+    DOM.runBtn.disabled   = true;
+    DOM.pauseBtn.disabled = false;
+    setStatus('paused', 'Stepping');
+    DOM.execAlgo.textContent = currentAlgo;
+  }
+
+  if (simPaused) clearTimeout(simTimer);
+  applyStep(stepIndex);
+  stepIndex++;
+  if (stepIndex >= simSteps.length) finishSimulation();
+}
+
+function tickSimulation() {
+  if (!simRunning || simPaused) return;
+  applyStep(stepIndex);
+  stepIndex++;
+  if (stepIndex >= simSteps.length) { finishSimulation(); return; }
+  const delay = Math.max(50, 1000 - (simSpeed - 1) * 100);
+  simTimer = setTimeout(tickSimulation, delay);
+}
+
+function applyStep(idx) {
+  if (idx >= simSteps.length) return;
+  const step = simSteps[idx];
+
+
+  DOM.clockDisplay.textContent = `T = ${step.time}`;
+  DOM.execTime.textContent     = step.time;
+
+
+  if (step.runningPid !== null) {
+    const proc = processes.find(p => p.id === step.runningPid);
+    const c = COLORS[proc.colorIdx];
+    DOM.cpuCore.classList.add('active');
+    DOM.cpuInner.innerHTML = `<span style="color:${c.hex};font-size:13px;font-weight:700;">P${step.runningPid}</span>`;
+    DOM.cpuInner.style.borderColor = c.hex;
+    DOM.execRunning.textContent = `P${step.runningPid}`;
+  } else {
+    DOM.cpuCore.classList.remove('active');
+    DOM.cpuInner.innerHTML = `<span class="cpu-idle-text">IDLE</span>`;
+    DOM.cpuInner.style.borderColor = '';
+    DOM.execRunning.textContent = '—';
+  }
+
+  DOM.execQueue.textContent = step.queuePids.length;
+  if (step.queuePids.length === 0) {
+    DOM.readyQueue.innerHTML = '<span class="flow-empty">Empty</span>';
+  } else {
+    DOM.readyQueue.innerHTML = step.queuePids.map(pid => {
+      const proc = processes.find(p => p.id === pid);
+      const c = COLORS[proc.colorIdx];
+      return `<span class="flow-chip proc-color-${proc.colorIdx}"
+        style="background:${c.bg};color:${c.hex};border-color:${c.border}">P${pid}</span>`;
+    }).join('');
+  }
+
+
+  if (step.completedPids.length === 0) {
+    DOM.doneQueue.innerHTML = '<span class="flow-empty">None</span>';
+  } else {
+    DOM.doneQueue.innerHTML = step.completedPids.map(pid => {
+      const proc = processes.find(p => p.id === pid);
+      const c = COLORS[proc.colorIdx];
+      return `<span class="flow-chip proc-color-${proc.colorIdx}"
+        style="background:${c.bg};color:${c.hex};border-color:${c.border};opacity:0.7">P${pid}</span>`;
+    }).join('');
+  }
+
+
+  renderGantt(step.ganttSoFar, step.runningPid);
+}
+
+function finishSimulation() {
+  simRunning = false;
+  clearTimeout(simTimer);
+  DOM.runBtn.disabled   = false;
+  DOM.pauseBtn.disabled = true;
+  DOM.stepBtn.disabled  = false;
+  setStatus('done', 'Done');
+  DOM.clockDisplay.textContent = `T = ${simTimeline.length > 0 ? Math.max(...simTimeline.map(s => s.end)) : 0}`;
+
+
+  renderGantt(simTimeline, null);
+
+  renderResults(simResults);
+
+
+  const avgWT  = simResults.reduce((s, r) => s + r.wt, 0) / simResults.length;
+  const avgTAT = simResults.reduce((s, r) => s + r.tat, 0) / simResults.length;
+  const totalTime = simTimeline.length > 0 ? Math.max(...simTimeline.map(s => s.end)) : 0;
+  const busyTime = simTimeline.reduce((s, seg) => s + (seg.end - seg.start), 0);
+  const utilization = totalTime > 0 ? (busyTime / totalTime) * 100 : 0;
+  const throughput = totalTime > 0 ? (simResults.length / totalTime).toFixed(3) : 0;
+
+  animateKPI('kpiWTVal', avgWT.toFixed(2));
+  animateKPI('kpiTATVal', avgTAT.toFixed(2));
+  animateKPI('kpiUtilVal', utilization.toFixed(1) + '%');
+  animateKPI('kpiThruVal', throughput + '/t');
+
+  document.querySelectorAll('.kpi-card').forEach(c => c.classList.add('populated'));
+
+
+  updateCharts(simResults, avgWT, avgTAT);
+
+  showToast(`Simulation complete — ${simResults.length} processes scheduled`, 'success');
+}
+
+function resetSim() {
+  clearTimeout(simTimer);
+  simRunning = false; simPaused = false;
+  simTimeline = []; simResults = []; simSteps = []; stepIndex = 0;
+  resetSimState();
+  setStatus('idle', 'Idle');
+  showToast('Simulation reset', 'info');
+}
+
+function resetSimState() {
+  DOM.runBtn.disabled   = false;
+  DOM.pauseBtn.disabled = true;
+  DOM.stepBtn.disabled  = false;
+  DOM.pauseBtn.innerHTML = '<span class="btn-icon">⏸</span> Pause';
+
+  DOM.clockDisplay.textContent = 'T = 0';
+  DOM.execTime.textContent     = '0';
+  DOM.execRunning.textContent  = '—';
+  DOM.execQueue.textContent    = '0';
+
+  DOM.cpuCore.classList.remove('active');
+  DOM.cpuInner.innerHTML = `<span class="cpu-idle-text">IDLE</span>`;
+  DOM.cpuInner.style.borderColor = '';
+
+  DOM.readyQueue.innerHTML = '<span class="flow-empty">Empty</span>';
+  DOM.doneQueue.innerHTML  = '<span class="flow-empty">None</span>';
+  DOM.ganttWrap.innerHTML  = '<div class="gantt-empty">Run simulation to see Gantt chart</div>';
+
+  DOM.resultsTableBody.innerHTML = `<tr class="empty-row"><td colspan="6">Results will appear after simulation completes</td></tr>`;
+  DOM.resultCount.textContent = '';
+
+  ['kpiWTVal','kpiTATVal','kpiUtilVal','kpiThruVal'].forEach(id => $(id).textContent = '—');
+  document.querySelectorAll('.kpi-card').forEach(c => c.classList.remove('populated'));
+
+  if (perfChart)    { perfChart.destroy();    perfChart = null; }
+  if (processChart) { processChart.destroy(); processChart = null; }
+}
+
+
+function renderGantt(timeline, currentPid) {
+  if (!timeline || timeline.length === 0) return;
+
+  const totalEnd = Math.max(...timeline.map(s => s.end));
+  const UNIT_PX  = Math.max(24, Math.min(60, Math.floor(900 / (totalEnd || 1))));
+
+  let html = `<div class="gantt-inner">`;
+  let prevEnd = 0;
+
+
+  const sorted = [...timeline].sort((a, b) => a.start - b.start);
+
+  sorted.forEach(seg => {
+
+    if (seg.start > prevEnd) {
+      const w = (seg.start - prevEnd) * UNIT_PX;
+      html += `<div class="gantt-block idle" style="width:${w}px;min-width:${w}px" title="Idle [${prevEnd}-${seg.start}]">
+                 <span style="font-size:9px;opacity:.5">IDLE</span>
+               </div>`;
     }
+    const proc = processes.find(p => p.id === seg.pid);
+    const c = proc ? COLORS[proc.colorIdx] : COLORS[0];
+    const w = (seg.end - seg.start) * UNIT_PX;
+    html += `<div class="gantt-block" 
+               style="width:${w}px;min-width:${w}px;background:${c.bg};color:${c.hex};border-color:${c.border};border-top:2px solid ${c.hex}"
+               title="P${seg.pid} [${seg.start}-${seg.end}] (${seg.end-seg.start} units)">
+               P${seg.pid}
+             </div>`;
+    prevEnd = seg.end;
+  });
+
+  html += `</div>`;
+
+
+  html += `<div style="position:relative;height:20px;margin-top:4px;min-width:${totalEnd * UNIT_PX + 20}px">`;
+  const tickInterval = totalEnd <= 20 ? 1 : totalEnd <= 50 ? 5 : 10;
+  for (let t = 0; t <= totalEnd; t++) {
+    if (t % tickInterval === 0 || t === totalEnd) {
+      html += `<span class="gantt-tick" style="left:${t * UNIT_PX}px">${t}</span>`;
+    }
+  }
+  html += `</div>`;
+
+
+  const uniquePids = [...new Set(timeline.map(s => s.pid))];
+  html += `<div class="gantt-legend">`;
+  uniquePids.forEach(pid => {
+    const proc = processes.find(p => p.id === pid);
+    const c = proc ? COLORS[proc.colorIdx] : COLORS[0];
+    html += `<div class="legend-item"><span class="legend-dot" style="background:${c.hex}"></span>P${pid}</div>`;
+  });
+  html += `</div>`;
+
+  DOM.ganttWrap.innerHTML = html;
+}
+
+function renderResults(results) {
+  if (!results.length) return;
+  DOM.resultCount.textContent = results.length;
+
+  const minWT  = Math.min(...results.map(r => r.wt));
+  const maxWT  = Math.max(...results.map(r => r.wt));
+  const minTAT = Math.min(...results.map(r => r.tat));
+
+  DOM.resultsTableBody.innerHTML = results.map((r, i) => {
+    const proc = processes.find(p => p.id === r.pid);
+    const c = proc ? COLORS[proc.colorIdx] : COLORS[0];
+    return `
+      <tr style="animation-delay:${i * 0.05}s">
+        <td><span class="pid-chip proc-color-${proc.colorIdx}">P${r.pid}</span></td>
+        <td>${r.arrival}</td>
+        <td>${r.burst}</td>
+        <td style="color:${c.hex};font-weight:600">${r.completion}</td>
+        <td class="${r.tat === minTAT ? 'best' : ''}">${r.tat}</td>
+        <td class="${r.wt === minWT ? 'best' : r.wt === maxWT && maxWT !== minWT ? 'worst' : ''}">${r.wt}</td>
+      </tr>`;
+  }).join('');
+}
+
+
+const CHART_DEFAULTS = {
+  responsive: true, maintainAspectRatio: false,
+  plugins: { legend: { labels: { color: '#94a3b8', font: { family: 'JetBrains Mono', size: 11 }, padding: 12 } } },
+};
+
+function updateCharts(results, avgWT, avgTAT) {
+  if (perfChart)    { perfChart.destroy();    perfChart = null; }
+  if (processChart) { processChart.destroy(); processChart = null; }
+
+
+  const labels = results.map(r => `P${r.pid}`);
+  perfChart = new Chart($('perfChart').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Waiting Time',
+          data: results.map(r => r.wt),
+          backgroundColor: 'rgba(249,115,22,0.5)',
+          borderColor: '#f97316',
+          borderWidth: 1, borderRadius: 4,
+        },
+        {
+          label: 'Turnaround Time',
+          data: results.map(r => r.tat),
+          backgroundColor: 'rgba(34,211,238,0.4)',
+          borderColor: '#22d3ee',
+          borderWidth: 1, borderRadius: 4,
+        },
+      ],
+    },
+    options: {
+      ...CHART_DEFAULTS,
+      scales: {
+        x: { ticks: { color: '#94a3b8', font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        y: { ticks: { color: '#94a3b8', font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+      },
+      animation: { duration: 600 },
+    },
+  });
+
+
+  processChart = new Chart($('processChart').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Waiting Time',
+          data: results.map(r => r.wt),
+          backgroundColor: results.map((_, i) => COLORS[i % COLORS.length].bg),
+          borderColor:     results.map((_, i) => COLORS[i % COLORS.length].hex),
+          borderWidth: 1, borderRadius: 4,
+        },
+      ],
+    },
+    options: {
+      ...CHART_DEFAULTS,
+      indexAxis: 'y',
+      scales: {
+        x: { ticks: { color: '#94a3b8', font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        y: { ticks: { color: '#94a3b8', font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+      },
+      plugins: { legend: { display: false } },
+      animation: { duration: 600 },
+    },
   });
 }
+
+
+function setStatus(type, text) {
+  DOM.statusPill.className = 'status-pill ' + type;
+  DOM.statusText.textContent = text;
+}
+
+function animateKPI(id, target) {
+  const el = $(id);
+  el.style.transition = 'all 0.3s ease';
+  el.textContent = target;
+}
+
+function showToast(msg, type = 'info') {
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  DOM.toastContainer.appendChild(t);
+  setTimeout(() => {
+    t.style.animation = 'toastOut 0.3s ease forwards';
+    setTimeout(() => t.remove(), 300);
+  }, 2500);
+}
+
+function loadPreset() {
+  processes = [];
+  nextPid = 1;
+  const preset = [
+    { arrival: 0, burst: 6, priority: 2 },
+    { arrival: 1, burst: 4, priority: 1 },
+    { arrival: 2, burst: 8, priority: 4 },
+    { arrival: 3, burst: 2, priority: 3 },
+    { arrival: 4, burst: 5, priority: 2 },
+  ];
+  preset.forEach((p, i) => {
+    processes.push({ id: nextPid++, arrival: p.arrival, burst: p.burst, priority: p.priority, colorIdx: i });
+  });
+  renderProcessTable();
+  showToast('Sample dataset loaded', 'success');
+}
+
+
+(function init() {
+  DOM.execAlgo.textContent = currentAlgo;
+
+  loadPreset();
+})();
