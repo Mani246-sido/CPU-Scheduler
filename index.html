@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>CPU Scheduler Simulator</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+
+<div class="container">
+  <h1>🧠 CPU Scheduler Simulator</h1>
+
+  <!-- INPUT -->
+  <div class="card">
+    <h3>Add Process</h3>
+    <input id="pid" placeholder="PID">
+    <input id="arrival" type="number" placeholder="Arrival Time">
+    <input id="burst" type="number" placeholder="Burst Time">
+    <input id="priority" type="number" placeholder="Priority">
+    <button onclick="addProcess()">➕ Add</button>
+  </div>
+
+  <!-- TABLE -->
+  <div class="card">
+    <h3>Process Table</h3>
+    <table id="processTable">
+      <thead>
+        <tr>
+          <th>PID</th>
+          <th>AT</th>
+          <th>BT</th>
+          <th>Priority</th>
+          <th>❌</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="card">
+    <h3>Controls</h3>
+    <select id="algorithm">
+      <option value="fcfs">FCFS</option>
+      <option value="sjf">SJF</option>
+      <option value="srtf">SRTF</option>
+      <option value="priority">Priority</option>
+      <option value="rr">Round Robin</option>
+    </select>
+
+    <input id="quantum" type="number" placeholder="Time Quantum">
+    <button onclick="runSimulation()">🚀 Run</button>
+    <button onclick="compareAll()">📊 Compare</button>
+    <button onclick="resetAll()">♻ Reset</button>
+  </div>
+
+  <!-- GANTT -->
+  <div class="card">
+    <h3>Gantt Chart (Live)</h3>
+    <div id="gantt"></div>
+  </div>
+
+  <!-- RESULTS -->
+  <div class="card">
+    <h3>Results</h3>
+    <div id="results"></div>
+  </div>
+
+  <!-- CPU GRAPH -->
+  <div class="card">
+    <h3>📊 CPU Utilization (Live)</h3>
+    <canvas id="cpuChart"></canvas>
+  </div>
+
+  <!-- COMPARISON -->
+  <div class="card">
+    <h3>📊 Algorithm Comparison</h3>
+    <canvas id="chart"></canvas>
+  </div>
+
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
